@@ -1,20 +1,28 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="SnapChem API", version="0.1.0")
 
-# Allow local dev with Next.js
+# Only these sites may call the API from a browser. Set ALLOWED_ORIGINS to a
+# comma-separated list (e.g. "https://your-site.netlify.app") in production.
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 # --- Demo in-memory "chemical registry" ---
@@ -93,7 +101,7 @@ class Chemical(BaseModel):
     first_aid: List[str] = []
 
 class IdentifyRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=20_000)
 
 class IdentifyResponse(BaseModel):
     extracted: Dict[str, Any]
@@ -120,7 +128,7 @@ def health():
 
 @app.get("/chemicals", response_model=list[Chemical])
 def chemicals(q: str = ""):
-    ql = q.strip().lower()
+    ql = q[:200].strip().lower()
     if not ql:
         return [Chemical(**c) for c in CHEMICALS[:50]]
     out = []
@@ -152,6 +160,6 @@ async def identify_photo(file: UploadFile = File(...)):
     # For now, we just return a message.
     return {
         "message": "Photo received. Add OCR (e.g., Tesseract) server-side later, or run OCR in the browser.",
-        "filename": file.filename,
+        "filename": (file.filename or "")[:255],
         "content_type": file.content_type,
     }
